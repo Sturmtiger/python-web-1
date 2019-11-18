@@ -27,11 +27,9 @@ def get_count(redis, short_id):
 def get_list_urls(redis):
     url_count = int(redis.get('last-url-id'))
 
-    urls = list()
+    urls = dict()
     for short_id in range(1, url_count+1):
         url = redis.get('url-target:' + str(short_id)).decode('utf-8')
-        # urls.append(url)
+        urls[short_id] = url
 
     return urls
-
-

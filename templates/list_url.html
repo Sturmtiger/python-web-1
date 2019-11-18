@@ -7,8 +7,8 @@
     {% endif %}
 
     <ol>
-    {% for url in urls %}
-        <li>{{ url }}</li>
+    {% for short_id, link in urls.items() %}
+        <li style="margin-bottom: 10px;"><a target="_blank" href="/{{ short_id }}/detail">{{ link }}</a></li>
     {% endfor %}
     </ol>
 {% endblock %}
