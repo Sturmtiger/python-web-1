@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% block title %}List url{% endblock %}
+{% block body %}
+      <h2>URL list:</h2>
+    {% if error %}
+        <p class=error><strong>Error:</strong> {{ error }}</p>
+    {% endif %}
+
+    <ol>
+    {% for url in urls %}
+        <li>{{ url }}</li>
+    {% endfor %}
+    </ol>
+{% endblock %}

@@ -12,7 +12,8 @@ import os
 
 import redis
 
-from db import get_url, insert_url
+from db import (get_url, insert_url, get_count,
+                increment_url, get_list_urls)
 from utils import get_hostname, is_valid_url
 
 from jinja2 import Environment
@@ -25,6 +26,8 @@ from werkzeug.routing import Rule
 from werkzeug.utils import redirect
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
+
+import auth_data
 
 
 class Shortly(object):
@@ -39,10 +42,11 @@ class Shortly(object):
         self.url_map = Map(
             [
                 Rule("/", endpoint="home"),
-                # TODO: Добавить ендпоинты на:
-                # - создание шортката
-                # - редирект по ссылке
-                # - детальную информацию о ссылке
+                Rule("/new_url", endpoint="new_url"),
+                Rule("/<short_id>/detail", endpoint="short_link_details"),
+                Rule("/<short_id>", endpoint="follow_short_link"),
+                Rule("/list_url", endpoint="list_url"),
+                Rule("/log_out", endpoint="log_out"),
             ]
         )
 
@@ -51,6 +55,7 @@ class Shortly(object):
         return Response(t.render(context), mimetype="text/html")
 
     def dispatch_request(self, request):
+        # print(request.environ)
         adapter = self.url_map.bind_to_environ(request.environ)
         try:
             endpoint, values = adapter.match()
@@ -62,8 +67,32 @@ class Shortly(object):
 
     def wsgi_app(self, environ, start_response):
         request = Request(environ)
-        response = self.dispatch_request(request)
+
+        # print(request.authorization)
+        if (request.authorization
+                and request.authorization['username'] == auth_data.LOGIN
+                and request.authorization['password'] == auth_data.PASSWORD):
+
+            response = self.dispatch_request(request)
+        else:
+            response = self.logged_in_require()
+
         return response(environ, start_response)
+
+    def logged_in_require(self):
+        """Requires user to authenticate"""
+        return Response(
+            response="Invalid password or login",
+            status=401,
+            headers={'WWW-Authenticate': 'Basic realm="login required", charset="UTF-8"'},
+        )
+
+    def on_log_out(self, request):
+        """This method allows to log out"""
+        return Response(
+            response='Logged out',
+            status=401,
+        )
 
     def on_home(self, request):
         return self.render_template("homepage.html")
@@ -71,27 +100,29 @@ class Shortly(object):
     def on_new_url(self, request):
         error = None
         url = ""
-        # TODO: Проверить что метод для создания новой ссылки "POST"
-        # Проверить валидность ссылки используя is_valid_url
-        # Если ссылка верна - создать запись в базе и
-        # отправить пользователя на детальную информацию
-        # Если неверна - написать ошибку
+
+        if request.method == 'POST':
+            url = request.form['url']
+
+            if is_valid_url(url):
+                url_id = insert_url(self.redis, url)
+                return redirect('%s/detail' % url_id.decode('utf-8'))
+            error = 'URL is not valid'
 
         return self.render_template("new_url.html", error=error, url=url)
 
     def on_follow_short_link(self, request, short_id):
-        # TODO: Достать из базы запись о ссылке по ее ид (get_url)
-        # если такого ид в базе нет то кинуть 404 (NotFount())
-        # заинкрементить переход по ссылке (increment_url)
-        link_target = "/"
+        link_target = get_url(self.redis, short_id)
+        increment_url(self.redis, short_id)
+
         return redirect(link_target)
 
     def on_short_link_details(self, request, short_id):
-        # TODO: Достать из базы запись о ссылке по ее ид (get_url)
-        # если такого ид в базе нет то кинуть 404 (NotFount())
-        link_target = "/"
+        link_target = get_url(self.redis, short_id)
+        if not link_target:
+            NotFound()
 
-        click_count = 0  # достать из базы кол-во кликов по ссылке (get_count)
+        click_count = get_count(self.redis, short_id)
         return self.render_template(
             "short_link_details.html",
             link_target=link_target,
@@ -100,8 +131,15 @@ class Shortly(object):
         )
 
     def on_list_url(self, request):
-        # TODO: ДЗ
-        pass
+        error = ''
+        urls = get_list_urls(self.redis)
+        if not urls:
+            error = 'Not URLs found'
+        return self.render_template(
+            "list_url.html",
+            error=error,
+            urls=urls,
+        )
 
     def error_404(self):
         response = self.render_template("404.html")
